@@ -1,0 +1,31 @@
+.authentiscore-badge {
+    display: inline-block !important;
+    margin-left: 8px !important;
+    font-size: 12px !important;
+    font-weight: bold !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    vertical-align: middle !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    cursor: help !important;
+    transition: opacity 0.2s ease !important;
+}
+
+.authentiscore-badge:hover {
+    opacity: 0.8 !important;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.authentiscore-badge {
+    animation: fadeIn 0.3s ease-out !important;
+}

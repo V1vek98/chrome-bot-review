@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Icons</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            margin: 10px;
+            background: white;
+        }
+        .icon-container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        h2 {
+            color: #333;
+        }
+        .instructions {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <h2>AuthentiScore Icon Generator</h2>
+        <p>This page generates the required icons for the Chrome extension.</p>
+        <p>To save the icons:</p>
+        <ol>
+            <li>Right-click on each canvas below</li>
+            <li>Select "Save image as..."</li>
+            <li>Save to the icons folder with the appropriate name (icon16.png, icon48.png, icon128.png)</li>
+        </ol>
+    </div>
+    
+    <div class="icon-container">
+        <div>
+            <h3>16x16 Icon</h3>
+            <canvas id="icon16" width="16" height="16"></canvas>
+        </div>
+        <div>
+            <h3>48x48 Icon</h3>
+            <canvas id="icon48" width="48" height="48"></canvas>
+        </div>
+        <div>
+            <h3>128x128 Icon</h3>
+            <canvas id="icon128" width="128" height="128"></canvas>
+        </div>
+    </div>
+
+    <script>
+        function drawIcon(canvasId, size) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Background gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#4285f4');
+            gradient.addColorStop(1, '#1a73e8');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            
+            // White shield/badge shape
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const shieldSize = size * 0.6;
+            
+            // Simple shield shape
+            ctx.moveTo(centerX, centerY - shieldSize/2);
+            ctx.lineTo(centerX + shieldSize/2, centerY - shieldSize/3);
+            ctx.lineTo(centerX + shieldSize/2, centerY + shieldSize/4);
+            ctx.quadraticCurveTo(centerX, centerY + shieldSize/2, centerX - shieldSize/2, centerY + shieldSize/4);
+            ctx.lineTo(centerX - shieldSize/2, centerY - shieldSize/3);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Add checkmark
+            ctx.strokeStyle = '#0f9d58';
+            ctx.lineWidth = size / 8;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(centerX - shieldSize/4, centerY);
+            ctx.lineTo(centerX - shieldSize/8, centerY + shieldSize/6);
+            ctx.lineTo(centerX + shieldSize/4, centerY - shieldSize/6);
+            ctx.stroke();
+            
+            // Add "AS" text for larger icons
+            if (size >= 48) {
+                ctx.fillStyle = '#1a73e8';
+                ctx.font = `bold ${size/6}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('AS', centerX, size - size/8);
+            }
+        }
+        
+        // Draw all icons
+        drawIcon('icon16', 16);
+        drawIcon('icon48', 48);
+        drawIcon('icon128', 128);
+    </script>
+</body>
+</html>

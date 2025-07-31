@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AuthentiScore</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AuthentiScore</h1>
+            <p class="tagline">Review Authenticity Analyzer</p>
+        </header>
+        
+        <div class="status-section">
+            <div id="status" class="status">
+                <span class="status-icon">⚡</span>
+                <span id="status-text">Ready to analyze</span>
+            </div>
+        </div>
+
+        <button id="analyze-btn" class="analyze-button">
+            Analyze Reviews on This Page
+        </button>
+
+        <div class="info-section">
+            <h3>How it works:</h3>
+            <ul>
+                <li>Analyzes reviewer history</li>
+                <li>Detects generic language patterns</li>
+                <li>Evaluates review specificity</li>
+                <li>Checks for suspicious patterns</li>
+            </ul>
+        </div>
+
+        <div class="legend">
+            <h3>Score Legend:</h3>
+            <div class="legend-item">
+                <span class="score-badge high">80-100%</span>
+                <span>Highly Authentic</span>
+            </div>
+            <div class="legend-item">
+                <span class="score-badge medium">60-79%</span>
+                <span>Moderately Authentic</span>
+            </div>
+            <div class="legend-item">
+                <span class="score-badge low">0-59%</span>
+                <span>Potentially Suspicious</span>
+            </div>
+        </div>
+
+        <footer>
+            <a href="#" id="settings-link">Settings</a>
+            <span class="version">v1.0.0</span>
+        </footer>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
