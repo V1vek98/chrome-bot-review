@@ -2,6 +2,33 @@
     'use strict';
 
     let isAnalyzed = false;
+    let observerInstance = null;
+
+    // Wait for element function using Promise
+    function waitForElement(selector, timeout = 10000) {
+        return new Promise((resolve, reject) => {
+            if (document.querySelector(selector)) {
+                return resolve(document.querySelector(selector));
+            }
+
+            const observer = new MutationObserver((mutations, obs) => {
+                if (document.querySelector(selector)) {
+                    obs.disconnect();
+                    resolve(document.querySelector(selector));
+                }
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            setTimeout(() => {
+                observer.disconnect();
+                reject(new Error(`Timeout waiting for selector: ${selector}`));
+            }, timeout);
+        });
+    }
 
     function calculateAuthenticityScore(reviewObject) {
         let score = 100;
@@ -108,187 +135,325 @@
     }
 
     function extractReviewerCount(container) {
-        const reviewCountText = container.textContent;
-        const countMatch = reviewCountText.match(/(\d+)\s*review/i);
-        if (countMatch) {
-            return parseInt(countMatch[1]);
-        }
+        // Look for patterns like "1 review", "5 contributions", etc.
+        const textContent = container.textContent || '';
+        const patterns = [
+            /(\d+)\s*reviews?/i,
+            /(\d+)\s*contributions?/i,
+            /(\d+)\s*photos?/i
+        ];
         
-        const contributionsMatch = reviewCountText.match(/(\d+)\s*contribution/i);
-        if (contributionsMatch) {
-            return parseInt(contributionsMatch[1]);
+        for (const pattern of patterns) {
+            const match = textContent.match(pattern);
+            if (match) {
+                return parseInt(match[1]);
+            }
         }
         
         return 1;
     }
 
     function extractRating(container) {
-        const ratingElement = container.querySelector('[aria-label*="star"], [aria-label*="Star"], [class*="star"]');
-        if (ratingElement) {
-            const ariaLabel = ratingElement.getAttribute('aria-label');
-            if (ariaLabel) {
-                const match = ariaLabel.match(/(\d)/);
-                if (match) return parseInt(match[1]);
-            }
+        // Try to find rating from aria-label
+        const ratingElements = container.querySelectorAll('[aria-label*="star" i], [aria-label*="Star" i]');
+        for (const elem of ratingElements) {
+            const ariaLabel = elem.getAttribute('aria-label');
+            const match = ariaLabel.match(/(\d)/);
+            if (match) return parseInt(match[1]);
         }
         
-        const starElements = container.querySelectorAll('[class*="star"][aria-checked="true"], [class*="star"][data-filled="true"]');
-        if (starElements.length > 0) {
-            return starElements.length;
+        // Count filled stars
+        const filledStars = container.querySelectorAll('[aria-checked="true"], [data-filled="true"], .NhBTye');
+        if (filledStars.length > 0 && filledStars.length <= 5) {
+            return filledStars.length;
         }
         
+        // Default to 5 if we can't determine
         return 5;
     }
 
-    function scrapeReviews() {
+    function scrapeGoogleMapsReviews() {
+        console.log('AuthentiScore: Starting Google Maps review detection...');
+        
+        // Primary selectors for 2024 Google Maps
         const reviewSelectors = [
-            '[data-review-id]',
-            '[class*="review"][class*="container"]',
-            '[class*="review-item"]',
+            '.jftiEf', // Primary review container selector
+            'div[data-review-id]',
             '[jsaction*="review"]',
-            'div[jstcache] > div[jsaction]'
+            'div[jstcache][jscontroller]',
+            '.section-review',
+            'div[data-hveid]'
         ];
         
         let reviewContainers = [];
+        
+        // Try each selector
         for (const selector of reviewSelectors) {
             const elements = document.querySelectorAll(selector);
+            console.log(`AuthentiScore: Trying selector ${selector}, found ${elements.length} elements`);
             if (elements.length > 0) {
-                reviewContainers = elements;
+                reviewContainers = Array.from(elements);
                 break;
             }
         }
         
+        // If no containers found, try a more general approach
         if (reviewContainers.length === 0) {
+            console.log('AuthentiScore: No review containers found with primary selectors, trying fallback...');
+            
+            // Look for elements that have both reviewer info and review text
             const allDivs = document.querySelectorAll('div');
             reviewContainers = Array.from(allDivs).filter(div => {
-                const text = div.textContent || '';
-                return text.includes('review') && 
-                       (text.includes('star') || text.includes('★')) &&
-                       div.querySelector('img[src*="googleusercontent"]');
+                // Check if it has a link to contributor profile
+                const hasContribLink = div.querySelector('a[href*="/contrib/"], a[href*="/maps/contrib/"]');
+                
+                // Check if it has review-like text
+                const textElements = div.querySelectorAll('span, div');
+                const hasReviewText = Array.from(textElements).some(el => {
+                    const text = el.textContent.trim();
+                    return text.length > 20 && text.length < 5000 && !text.includes('Google');
+                });
+                
+                // Check for time indicators
+                const hasTimeInfo = div.textContent.match(/\b(\d+\s*(days?|weeks?|months?|years?|hours?)\s*ago)\b/i);
+                
+                return hasContribLink && hasReviewText && hasTimeInfo;
             });
+            
+            console.log(`AuthentiScore: Fallback found ${reviewContainers.length} potential review containers`);
         }
         
         const reviews = [];
-        reviewContainers.forEach(container => {
-            const nameSelectors = [
-                '[class*="reviewer-name"]',
-                '[class*="author-name"]',
-                '[aria-label*="Written by"]',
-                'a[href*="/contrib/"] > div',
-                '[class*="review"] a[href*="contrib"]'
-            ];
-            
-            let authorName = '';
-            for (const selector of nameSelectors) {
-                const element = container.querySelector(selector);
-                if (element && element.textContent.trim()) {
-                    authorName = element.textContent.trim();
-                    break;
+        
+        reviewContainers.forEach((container, index) => {
+            try {
+                // Extract reviewer name - 2024 selectors
+                const nameSelectors = [
+                    '.d4r55', // Primary name selector
+                    'a[href*="/contrib/"] > div:first-child',
+                    'a[href*="/maps/contrib/"] > div:first-child',
+                    'a[href*="/contrib/"] span',
+                    'button[jsaction] img[src*="googleusercontent"] + div',
+                    '[aria-label*="Written by"]'
+                ];
+                
+                let authorName = '';
+                for (const selector of nameSelectors) {
+                    const element = container.querySelector(selector);
+                    if (element && element.textContent.trim()) {
+                        authorName = element.textContent.trim();
+                        break;
+                    }
                 }
-            }
-            
-            const textSelectors = [
-                '[class*="review-text"]',
-                '[class*="review-content"]',
-                '[data-review-text]',
-                '[class*="snippet"]',
-                'span[jsan*="7"]'
-            ];
-            
-            let reviewText = '';
-            for (const selector of textSelectors) {
-                const element = container.querySelector(selector);
-                if (element && element.textContent.trim().length > 10) {
-                    reviewText = element.textContent.trim();
-                    break;
+                
+                // Extract review text - 2024 selectors
+                const textSelectors = [
+                    '.wiI7pd', // Primary text selector
+                    '.MyEned',
+                    'span[style*="webkit-line-clamp"]',
+                    '[data-review-text]',
+                    'div[jsname] span[jsname]'
+                ];
+                
+                let reviewText = '';
+                for (const selector of textSelectors) {
+                    const element = container.querySelector(selector);
+                    if (element && element.textContent.trim().length > 10) {
+                        reviewText = element.textContent.trim();
+                        break;
+                    }
                 }
-            }
-            
-            if (authorName && reviewText) {
-                const review = {
-                    authorName: authorName,
-                    reviewText: reviewText,
-                    rating: extractRating(container),
-                    photoCount: container.querySelectorAll('img[src*="googleusercontent"]:not([aria-label*="profile"])').length,
-                    reviewDate: container.querySelector('span[class*="date"], [class*="published"]')?.textContent || '',
-                    totalReviews: extractReviewerCount(container),
-                    hasLocalGuide: !!container.querySelector('[class*="local-guide"], [aria-label*="Local Guide"]')
-                };
-                reviews.push(review);
+                
+                // If we still don't have text, try a more general approach
+                if (!reviewText) {
+                    const spans = container.querySelectorAll('span');
+                    for (const span of spans) {
+                        const text = span.textContent.trim();
+                        if (text.length > 20 && text.length < 5000 && 
+                            !text.includes('ago') && !text.includes('Local Guide') &&
+                            !span.querySelector('a')) {
+                            reviewText = text;
+                            break;
+                        }
+                    }
+                }
+                
+                if (authorName && reviewText) {
+                    const review = {
+                        authorName: authorName,
+                        reviewText: reviewText,
+                        rating: extractRating(container),
+                        photoCount: container.querySelectorAll('img[src*="googleusercontent"]:not([aria-label*="profile"])').length,
+                        reviewDate: container.textContent.match(/\b(\d+\s*(days?|weeks?|months?|years?|hours?)\s*ago)\b/i)?.[0] || '',
+                        totalReviews: extractReviewerCount(container),
+                        hasLocalGuide: !!container.querySelector('[aria-label*="Local Guide"], .RfDO5c')
+                    };
+                    
+                    reviews.push(review);
+                    console.log(`AuthentiScore: Extracted review ${index + 1}:`, review.authorName);
+                }
+            } catch (error) {
+                console.error(`AuthentiScore: Error extracting review ${index}:`, error);
             }
         });
         
+        console.log(`AuthentiScore: Total reviews extracted: ${reviews.length}`);
         return reviews;
     }
 
     function injectScores(reviews) {
+        console.log('AuthentiScore: Injecting scores for', reviews.length, 'reviews');
+        
+        // Get review containers again for score injection
         const reviewSelectors = [
-            '[data-review-id]',
-            '[class*="review"][class*="container"]',
-            '[class*="review-item"]',
+            '.jftiEf',
+            'div[data-review-id]',
             '[jsaction*="review"]',
-            'div[jstcache] > div[jsaction]'
+            'div[jstcache][jscontroller]',
+            '.section-review',
+            'div[data-hveid]'
         ];
         
         let reviewElements = [];
         for (const selector of reviewSelectors) {
             const elements = document.querySelectorAll(selector);
             if (elements.length > 0) {
-                reviewElements = elements;
+                reviewElements = Array.from(elements);
                 break;
             }
         }
         
-        reviews.forEach((review, index) => {
-            if (reviewElements[index]) {
-                const score = calculateAuthenticityScore(review);
-                const scoreElement = createScoreElement(score);
-                
-                const nameSelectors = [
-                    '[class*="reviewer-name"]',
-                    '[class*="author-name"]',
-                    '[aria-label*="Written by"]',
-                    'a[href*="/contrib/"] > div',
-                    '[class*="review"] a[href*="contrib"]'
-                ];
-                
-                let nameElement = null;
-                for (const selector of nameSelectors) {
-                    nameElement = reviewElements[index].querySelector(selector);
-                    if (nameElement) break;
+        // If we can't find containers, try to match by author name
+        if (reviewElements.length === 0) {
+            reviews.forEach(review => {
+                const allLinks = document.querySelectorAll('a[href*="/contrib/"], a[href*="/maps/contrib/"]');
+                allLinks.forEach(link => {
+                    if (link.textContent.trim() === review.authorName) {
+                        const score = calculateAuthenticityScore(review);
+                        const scoreElement = createScoreElement(score);
+                        
+                        if (!link.parentElement.querySelector('.authentiscore-badge')) {
+                            link.parentElement.appendChild(scoreElement);
+                        }
+                    }
+                });
+            });
+        } else {
+            // Match reviews to elements and inject scores
+            reviews.forEach((review, index) => {
+                if (reviewElements[index]) {
+                    const score = calculateAuthenticityScore(review);
+                    const scoreElement = createScoreElement(score);
+                    
+                    // Find the best place to inject the score
+                    const nameSelectors = [
+                        '.d4r55',
+                        'a[href*="/contrib/"]',
+                        'a[href*="/maps/contrib/"]',
+                        'button[jsaction] img[src*="googleusercontent"] + div'
+                    ];
+                    
+                    let injectionTarget = null;
+                    for (const selector of nameSelectors) {
+                        const element = reviewElements[index].querySelector(selector);
+                        if (element) {
+                            injectionTarget = element;
+                            break;
+                        }
+                    }
+                    
+                    if (injectionTarget && !injectionTarget.parentElement.querySelector('.authentiscore-badge')) {
+                        injectionTarget.parentElement.appendChild(scoreElement);
+                    }
                 }
-                
-                if (nameElement && !nameElement.querySelector('.authentiscore-badge')) {
-                    nameElement.appendChild(scoreElement);
-                }
+            });
+        }
+    }
+
+    function setupMutationObserver() {
+        if (observerInstance) {
+            observerInstance.disconnect();
+        }
+        
+        observerInstance = new MutationObserver((mutations) => {
+            // Check if new reviews have been loaded
+            const hasNewReviews = mutations.some(mutation => {
+                return Array.from(mutation.addedNodes).some(node => {
+                    if (node.nodeType === 1) { // Element node
+                        return node.matches && (
+                            node.matches('.jftiEf') ||
+                            node.querySelector('.jftiEf') ||
+                            node.querySelector('.wiI7pd') ||
+                            node.querySelector('.d4r55')
+                        );
+                    }
+                    return false;
+                });
+            });
+            
+            if (hasNewReviews && !isAnalyzed) {
+                console.log('AuthentiScore: New reviews detected, analyzing...');
+                setTimeout(() => {
+                    analyzeReviews();
+                }, 500);
             }
+        });
+        
+        observerInstance.observe(document.body, {
+            childList: true,
+            subtree: true
         });
     }
 
-    function analyzeReviews() {
+    async function analyzeReviews() {
         if (isAnalyzed) {
             const existingBadges = document.querySelectorAll('.authentiscore-badge');
             existingBadges.forEach(badge => badge.remove());
+            isAnalyzed = false;
         }
         
-        const reviews = scrapeReviews();
+        // Try to wait for reviews to load
+        try {
+            await waitForElement('.jftiEf, .wiI7pd, [data-review-id]', 5000);
+        } catch (error) {
+            console.log('AuthentiScore: Timeout waiting for reviews, trying anyway...');
+        }
+        
+        const reviews = scrapeGoogleMapsReviews();
+        
         if (reviews.length > 0) {
             injectScores(reviews);
             isAnalyzed = true;
+            
+            // Setup observer for new reviews
+            setupMutationObserver();
+            
             return { success: true, count: reviews.length };
         }
+        
+        // If no reviews found, setup observer to wait for them
+        setupMutationObserver();
+        
         return { success: false, count: 0 };
     }
 
+    // Message listener
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'analyzeReviews') {
-            const result = analyzeReviews();
-            sendResponse(result);
+            console.log('AuthentiScore: Received analyze request');
+            analyzeReviews().then(result => {
+                sendResponse(result);
+            });
+            return true; // Keep message channel open for async response
         }
     });
 
+    // Initialize
     if (!window.authentiScoreInjected) {
         window.authentiScoreInjected = true;
         console.log('AuthentiScore content script loaded');
+        
+        // Setup observer immediately to catch reviews as they load
+        setupMutationObserver();
     }
 })();
